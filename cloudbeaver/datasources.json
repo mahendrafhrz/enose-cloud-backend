@@ -1,0 +1,48 @@
+{
+  "folders": {},
+  "connections": [
+    {
+      "id": "enose-postgresql-connection",
+      "driver": "postgresql",
+      "name": "E-Nose PostgreSQL Database",
+      "description": "Azure PostgreSQL Database for E-Nose Project",
+      "host": "enose-cloud-pg.postgres.database.azure.com",
+      "port": "5432",
+      "databaseName": "enose",
+      "url": "jdbc:postgresql://enose-cloud-pg.postgres.database.azure.com:5432/enose",
+      "properties": {
+        "ssl": "true",
+        "sslmode": "require"
+      },
+      "auth-model": "native",
+      "save-password": false,
+      "read-only": false,
+      "folder": "",
+      "configuration": {
+        "host": "enose-cloud-pg.postgres.database.azure.com",
+        "port": "5432",
+        "database": "enose",
+        "url": "jdbc:postgresql://enose-cloud-pg.postgres.database.azure.com:5432/enose",
+        "configurationType": "MANUAL",
+        "type": "dev",
+        "provider": "postgresql",
+        "auth-model": "native"
+      },
+      "credentials": {
+        "userName": "enoseadmin"
+      }
+    }
+  ],
+  "connection-types": [
+    {
+      "id": "dev",
+      "name": "Development",
+      "color": "255,255,255",
+      "description": "Development database",
+      "auto-commit": true,
+      "confirm-execute": false,
+      "confirm-data-change": false,
+      "auto-close-transactions": false
+    }
+  ]
+}
