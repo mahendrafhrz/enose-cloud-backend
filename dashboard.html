@@ -166,6 +166,28 @@
       
       if (tabName === 'admin') loadAdminData();
     }
+    
+    let autoRefreshInterval = null;
+    
+    function startAutoRefresh() {
+      stopAutoRefresh(); // Clear any existing interval
+      autoRefreshInterval = setInterval(() => {
+        const activeTab = document.querySelector('.tab-content.active');
+        if (activeTab && activeTab.id === 'tab-overview') {
+          loadDashboard();
+        } else if (activeTab && activeTab.id === 'tab-admin') {
+          loadAdminData();
+        }
+      }, 5000); // Refresh every 5 seconds
+    }
+    
+    function stopAutoRefresh() {
+      if (autoRefreshInterval) {
+        clearInterval(autoRefreshInterval);
+        autoRefreshInterval = null;
+      }
+    }
+    
     async function loadDashboard() {
       try {
         const [health, summary, measurements] = await Promise.all([fetch('/health').then(r => r.json()), fetch('/api/v1/analytics/summary').then(r => r.json()), fetch('/api/v1/measurements').then(r => r.json())]);
@@ -257,7 +279,7 @@
     
     $('admin-refresh').addEventListener('click', loadAdminData);
     $('delete-all').addEventListener('click', deleteAllData);
-    $('refresh').addEventListener('click', loadDashboard); $('report').addEventListener('click', () => window.location.href='/api/v1/reports/analytics.pdf'); loadDashboard();
+    $('refresh').addEventListener('click', loadDashboard); $('report').addEventListener('click', () => window.location.href='/api/v1/reports/analytics.pdf'); loadDashboard(); startAutoRefresh();
   </script>
 </body>
 </html>
