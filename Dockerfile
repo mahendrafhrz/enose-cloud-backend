@@ -12,6 +12,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=builder /app/target/release/enose-cloud /app/enose-cloud
+COPY --from=builder /app/dashboard.html /app/dashboard.html
 ENV HOST=0.0.0.0
 ENV PORT=8080
 EXPOSE 8080
