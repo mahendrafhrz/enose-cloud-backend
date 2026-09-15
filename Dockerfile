@@ -1,6 +1,6 @@
 FROM rust:bookworm AS builder
 WORKDIR /app
-COPY Cargo.toml Cargo.lock ./
+COPY Cargo.toml ./
 COPY src ./src
 COPY dashboard.html ./dashboard.html
 RUN cargo build --release --bin enose-cloud
