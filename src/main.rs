@@ -649,34 +649,111 @@ fn validate(payload: &CreateMeasurement) -> Result<(), ApiError> {
 }
 
 async fn mqtt_worker(state: AppState) {
-    let host = env("MQTT_HOST", "localhost");
-    let port = env("MQTT_PORT", "1883").parse().unwrap_or(1883);
-    let topic = env("MQTT_TOPIC", "enose/measurements");
-    let mut options = MqttOptions::new(env("MQTT_CLIENT_ID", "enose-cloud"), host, port);
-    options.set_keep_alive(Duration::from_secs(30));
-    let (client, mut event_loop) = AsyncClient::new(options, 10);
-    if let Err(error) = client.subscribe(&topic, QoS::AtLeastOnce).await {
-        error!(%error, "MQTT subscribe failed");
-        return;
-    }
-    info!(%topic, "MQTT ingestion enabled");
-    while let Ok(event) = event_loop.poll().await {
-        if let Event::Incoming(Incoming::Publish(message)) = event {
-            match serde_json::from_slice::<CreateMeasurement>(&message.payload) {
-                Ok(mut payload) => {
-                    payload.source = Some("mqtt".to_string());
-                    if validate(&payload).is_ok() {
-                        let state = Arc::new(state.clone());
-                        if let Err(error) = create_measurement(State(state), Json(payload)).await {
-                            warn!(?error, "MQTT measurement rejected");
-                        }
-                    } else {
-                        warn!("MQTT measurement failed validation");
-                    }
-                }
-                Err(error) => warn!(%error, "Invalid MQTT measurement JSON"),
+    loop {
+        info!("MQTT: Initializing connection...");
+        
+        let broker = env("MQTT_BROKER", "localhost");
+        let port = env("MQTT_PORT", "1883").parse().unwrap_or(1883);
+        let username = env::var("MQTT_USERNAME").ok();
+        let password = env::var("MQTT_PASSWORD").ok();
+        let topic = env("MQTT_TOPIC", "enose/+/measurement");
+        let _tls_enabled = env("MQTT_TLS", "false").eq_ignore_ascii_case("true");
+        
+        let mut options = MqttOptions::new(
+            env("MQTT_CLIENT_ID", "enose-cloud"),
+            broker.clone(),
+            port,
+        );
+        options.set_keep_alive(Duration::from_secs(30));
+        
+        // Set credentials if provided
+        if let (Some(user), Some(pass)) = (username.as_ref(), password.as_ref()) {
+            options.set_credentials(user, pass);
+            info!("MQTT: Using authentication");
+        }
+        
+        // TODO: TLS support can be added here when needed
+        // if tls_enabled {
+        //     use rumqttc::TlsConfiguration;
+        //     let tls_config = TlsConfiguration::Simple { ... };
+        //     options.set_tls_configuration(tls_config);
+        // }
+        
+        let (client, mut event_loop) = AsyncClient::new(options, 10);
+        
+        // Subscribe to topic
+        match client.subscribe(&topic, QoS::AtLeastOnce).await {
+            Ok(_) => {
+                info!(%topic, %broker, %port, "MQTT: Connected and subscribed");
+            }
+            Err(error) => {
+                error!(%error, "MQTT: Subscribe failed, retrying in 10s");
+                tokio::time::sleep(Duration::from_secs(10)).await;
+                continue;
             }
         }
+        
+        // Event loop
+        loop {
+            match event_loop.poll().await {
+                Ok(Event::Incoming(Incoming::Publish(message))) => {
+                    info!(
+                        topic = %message.topic,
+                        payload_len = message.payload.len(),
+                        "MQTT: Message received"
+                    );
+                    
+                    match serde_json::from_slice::<CreateMeasurement>(&message.payload) {
+                        Ok(mut payload) => {
+                            payload.source = Some("mqtt".to_string());
+                            
+                            if let Err(e) = validate(&payload) {
+                                warn!(?e, "MQTT: Payload validation failed");
+                                continue;
+                            }
+                            
+                            let state_arc = Arc::new(state.clone());
+                            match create_measurement(State(state_arc), Json(payload)).await {
+                                Ok((status, json)) => {
+                                    info!(
+                                        measurement_id = %json.id,
+                                        sample_id = json.sample_id,
+                                        device_id = ?json.device_id,
+                                        "MQTT: Measurement saved ({})",
+                                        status.as_u16()
+                                    );
+                                }
+                                Err(error) => {
+                                    warn!(?error, "MQTT: Database insert failed");
+                                }
+                            }
+                        }
+                        Err(error) => {
+                            warn!(
+                                %error,
+                                payload = ?String::from_utf8_lossy(&message.payload),
+                                "MQTT: Invalid JSON payload"
+                            );
+                        }
+                    }
+                }
+                Ok(Event::Incoming(Incoming::ConnAck(_))) => {
+                    info!("MQTT: Connection acknowledged");
+                }
+                Ok(Event::Incoming(Incoming::SubAck(_))) => {
+                    info!("MQTT: Subscription acknowledged");
+                }
+                Err(error) => {
+                    error!(%error, "MQTT: Connection error, reconnecting in 10s");
+                    tokio::time::sleep(Duration::from_secs(10)).await;
+                    break; // Break inner loop to reconnect
+                }
+                _ => {}
+            }
+        }
+        
+        // Reconnect delay before outer loop retries
+        tokio::time::sleep(Duration::from_secs(5)).await;
     }
 }
 
